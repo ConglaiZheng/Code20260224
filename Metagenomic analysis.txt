@@ -1,0 +1,85 @@
+#Sequence Quality Control
+/data/software/fastp -i ${i}_1.fq.gz -I ${i}_2.fq.gz -o ${i}.fastp.R1.fastq -O ${i}.fastp.R2.fastq
+bowtie2 -x bowtie2_db/tomato_ref/tomato -1 ${i}.fastp.R1.fastq -2 ${i}.fastp.R2.fastq -p 40 -S mapping.sam --un-conc ${i}
+mv ${i}.1 ${i}.R1.fastq
+mv ${i}.2 ${i}.R2.fastq
+rm mapping.sam
+/data/software/seqtk-1.3/seqtk fqchk -q 20 ${i}.R1.fastq
+/data/software/seqtk-1.3/seqtk fqchk -q 30 ${i}.R2.fastq
+
+#Metagenomic assembly
+SPAdes-3.15.2-Linux/bin/metaspades.py -t 40 -1 ${i}.R1.fastq.gz -2 ${i}.R2.fastq.gz -o 2-metaspades
+Prodigal-2.6.3/prodigal -p meta -a protein_seq.fasta -m -d nucleotide_seq.fasta -o genes.gff -f gff -s poteintial.stat -i contigs.fasta
+cd-hit-v4.8.1-2019-0228/cd-hit -i protein_seq.fasta -o multi_nonredu_protein1.fasta -c 0.95 -M 640000 -T 24 -G 1
+awk 'BEGIN{RS=">"}NR==FNR{a[$1]=$0}NR>FNR{print a[$1]}' nucleotide_seq.fasta multi_nonredu_protein1.fasta | awk NF | awk '{if($0~/[0-9]/){print ">"$0}else{print}}' > RT.fasta
+bwa-mem2-2.2.1_x64-linux/bwa-mem2 index RT.fasta
+bwa-mem2-2.2.1_x64-linux/bwa-mem2 mem RT.fasta ../SZC-1.pe.R1.fastq ../SZC-1.pe.R2.fastq -o test.sam -t 40
+samtools-1.16.1/samtools view -@ 20 -b test.sam > test.bam
+samtools-1.16.1/samtools sort -O bam -@ 40 -o sort.bam test.bam
+bedtools2/bin/bedtools bamtobed -i sort.bam > sort.bed
+args_oap stage_one -i ../14-argoap -o ../14-argoap/output -f fastq -t 20
+
+#ARG/MGE/VFG alignment
+diamond blastp --threads 40 -q protein_seq.fasta -d cardhomop.dmnd -o ${i}.ARG.txt --outfmt 6 -e 0.00001 --id 90 --max-target-seqs 1 --query-cover 70
+diamond blastp --threads 40 -q protein_seq.fasta -d mobileOG-db-beatrix-1.6.dmnd -o ${i}.MGE.txt --outfmt 6 -e 0.00001 --id 90 --max-target-seqs 1 --query-cover 90
+diamond blastp --threads 40 -q protein_seq.fasta -d vfdb.dmnd -o ${i}.VFG.txt --outfmt 6 -e 0.00001 --id 70 --max-target-seqs 1 --query-cover 70
+/data/software/diamond blastx --threads 1 -q ${i}.R1.fastq.gz -d cardhomop.dmnd -o ${i}.R1.ARG.txt --outfmt 6 -e 0.00001 --id 90 --max-target-seqs 1
+/data/software/diamond blastx --threads 1 -q ${i}.R2.fastq.gz -d cardhomop.dmnd -o ${i}.R2.ARG.txt --outfmt 6 -e 0.00001 --id 90 --max-target-seqs 1
+
+#Metagenomic binning
+metawrap binning -o INITIAL_BINNING -t 60 -m 4 -a contigs.fasta --metabat2 --maxbin2 --concoct ../*_1.fastq ../*_2.fastq
+metawrap bin_refinement -o REFINED_BINS -t 60 -c 50 -x 12 -A INITIAL_BINNING/maxbin2_bins -B INITIAL_BINNING/metabat2_bins -C INITIAL_BINNING/concoct_bins
+dRep dereplicate ../test -g ../metawrap_50_12_bins/*.fa -comp 50
+checkm lineage_wf -f checkm.txt -t 10 -x fa ../all ../Bin_quality --tmpdir ../tmp
+export GTDBTK_DATA_PATH=/data/zcl/gtdbtkdatabase/release220
+gtdbtk classify_wf --genome_dir dereplicated_genomes --out_dir gtdbtk_test/output --cpus 50 --extension fa --skip_ani_screen
+iqtree-2.2.2.6-Linux/bin/iqtree2 -s gtdbtk.bac120.user_msa.fasta -nt 20 -bb 1000 -redo
+metawrap quant_bins -t 10 -o metawrap -b ../bin-pick -a contigs.fasta ${i}_1.fastq ${i}_2.fastq
+
+#Plasmid assembly
+python SPAdes-3.15.2-Linux/bin/metaplasmidspades.py -t 40 -1 ${i}_1.fastq -2 ${i}_2.fastq -o 3-metaplasmidspades
+Plascad -i ../contigs.fasta
+
+#Genetic diversity
+parse_stb.py --reverse -f ../REFINED_BINS/metawrap_50_12_bins/*.fa -o genomes.stb
+inStrain profile final.sorted.bam contigs1000.fasta -o IS_output2 -g nucleotide_seq.fna -s genomes.stb  --skip_plot_generation
+awk -F'\t' 'NR>1 && $21 != "" {sum2 += $2; sum21_2 += $21*$2} END {print sum21_2/sum2}' IS_output2_genome_info.tsv
+
+#Taxonomic classification
+kraken2 --db minikraken2_v1_8GB  --threads 10  --report TEST.report --output TEST.output  --paired ${i}_1.fastq ${i}_2.fastq
+Bracken-2.7/bracken -d minikraken2_v1_8GB -i TEST.report -o TEST.P.bracken -w TEST.P.bracken.report -l P
+Bracken-2.7/bracken -d minikraken2_v1_8GB -i TEST.report -o TEST.G.bracken -w TEST.G.bracken.report -l G
+
+#antimicrobial BGC prediction
+antismash --genefinding-tool prodigal \
+          --output-dir antismash_output \
+          --clusterblast \
+          --asf \
+          --fullhmmer \
+          --cassis \
+          --cb-knowns \
+          --cb-general \
+          --cb-subclusters \
+          --pfam2go \
+          --rre \
+          --cc-mibig \
+          genome.fasta
+bigscape -i /path/to/all_gbks/ \
+         -o /path/to/output_dir \
+         -c 8 \
+         --cutoffs 0.3 0.5 0.7 \
+         --mix \
+         --pfam_dir pfam_db
+
+#functional annotation
+python eggnog-mapper/eggnog-mapper-master/emapper.py -i multi_nonredu_protein1.fasta --output KEGG -d eggnog_proteins.dmnd -m diamond --data_dir eggnog-mapper/eggnog-mapper-master/eggnog --cpu 16
+
+
+
+
+
+
+
+
+
+

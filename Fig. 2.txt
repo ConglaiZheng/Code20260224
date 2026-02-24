@@ -1,0 +1,108 @@
+#Starting R studio
+
+#niche breadth
+library(spaa)
+asv<-read.csv("asv.csv",row.names=1)
+niche_width <- niche.width(t(asv), method = 'levins')
+
+
+
+#Sloan neutral model
+library(Hmisc)
+library(minpack.lm)
+library(stats4)
+spp<-read.csv('spp.txt',head=T,stringsAsFactors=F,row.names=1,sep = "\t")
+spp<-t(spp)
+N <- mean(apply(spp, 1, sum))
+p.m <- apply(spp, 2, mean)
+p.m <- p.m[p.m != 0]
+p <- p.m/N
+spp.bi <- 1*(spp>0)
+freq <- apply(spp.bi, 2, mean)
+freq <- freq[freq != 0]
+C <- merge(p, freq, by=0)
+C <- C[order(C[,2]),]
+C <- as.data.frame(C)
+C.0 <- C[!(apply(C, 1, function(y) any(y == 0))),]
+p <- C.0[,2]
+freq <- C.0[,3]
+names(p) <- C.0[,1]
+names(freq) <- C.0[,1]
+d = 1/N
+m.fit <- nlsLM(freq ~ pbeta(d, N*m*p, N*m*(1 -p), lower.tail=FALSE),start=list(m=0.1))
+m.fit 
+
+
+
+#Ordinary Least Squares (OLS) linear model
+library(ggplot2)
+library(ggpmisc)
+NARGOLS<-read.csv("NARGOLS.csv")
+fit.ols <- lm(ARG~MGE, NARGOLS)
+summary(fit.ols)
+ggplot(data = NARGOLS, aes(x = MGE, y = ARG)) +
+  geom_point(size=5,color="blue",alpha=.7) +
+  geom_smooth(method = 'lm', formula = y~x, se = TRUE, show.legend = FALSE,color="black") + 
+  stat_poly_eq(aes(label = paste(..eq.label.., ..rr.label.., stat(p.value.label), sep = '~`,`~')),
+               formula = y~x, parse = TRUE, label.x.npc = 'left', label.y.npc = 'top') +
+  theme(panel.grid = element_blank(), panel.background = element_rect(fill = 'transparent', color = 'gray30'))
+
+
+
+#Random Forest
+library(vegan)
+library(ggplot2)
+library(RColorBrewer)
+library(tidyverse)
+data_pca<-read.csv("ols2.csv")
+set.seed(123)
+sample_indices<-sample(1:nrow(data_pca),nrow(data_pca)*0.3)
+test_data<-data_pca[sample_indices,]
+train_data<-data_pca[-sample_indices,]
+
+library(randomForest)
+rf_model<-randomForest(
+  ARG~.,
+  data=train_data,
+  ntree=500,
+  importance=TRUE
+)
+rf_model
+predictions<-predict(rf_model,newdata=test_data)
+mse<-mean((predictions-test_data$ARG)^2)
+r_squared<-1-mse/var(test_data$ARG)
+print(paste("Mean Squared Error (MSE): ",mse))
+print(paste("R-squared (R^2):",r_squared))
+
+library(rfPermute)
+set.seed(123)
+factor_rfP<-rfPermute(
+  ARG~.,
+  data=data_pca,
+  ntree=500,
+  importance=TRUE,
+  nrep=1000,
+  num.cores=6
+)
+factor_rfP
+importance_factor.scale<-data.frame(
+  importance(factor_rfP,scale=TRUE),
+  check.names=FALSE
+)
+importance_factor.scale
+importance_factor.scale.pval<-factor_rfP$pval[,,2]
+importance_factor.scale.pval
+importance_factor.scale<-importance_factor.scale[order(importance_factor.scale$'%IncMSE',decreasing=TRUE),]
+importance_factor.scale
+
+
+
+#community assembly
+library(iCAMP)
+library(ape)
+comm=example.data$comm
+tree=read.tree("gtdbtk.bac120.user_msa.fasta.treefile")
+icamp.out=icamp.big(comm=comm,tree=tree,pd.wd="./iCAMP",rand=20,nworker=2,bin.size.limit=5)
+classification<-read.csv("classification.csv",row.names=1)
+icbin=icamp.bins(icamp.detail = icamp.out2$detail,treat=icamp.out2$treat,rand.time=20,clas = classification)
+

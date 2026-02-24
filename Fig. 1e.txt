@@ -1,0 +1,27 @@
+#Starting R studio
+
+library(ggplot2)
+slt<-read.csv("slt.csv")
+slt$x<-factor(slt$x,levels=rev(unique(slt$x)))
+ggplot(slt)+
+  geom_hline(yintercept=0,linewidth=0.3)+
+  geom_linerange(aes(x,ymin=min,ymax=max,color=p_col),show.legend=F)+
+  geom_point(aes(x,med,color=p_col))+
+  geom_text(aes(x,y=max+1,label=p,color=p_col),show.legend=F)+
+  scale_color_manual(name="",
+                     values=c("Postiveeffect(P<0.05)"="#d55e00",
+                                "Postiveeffect(P>=0.05)"="#ffbd88",
+                                "Negtiveeffect(P<0.05)"="#0072b2",
+                                "Negtiveeffect(P>=0.05)"="#7acfff"))+
+  annotate("rect",
+           xmin=c(0,6.5,12.5,18.5,24.5),
+           xmax=c(6.5,12.5,18.5,24.5,30),
+           ymin=-5,ymax=11,alpha=0.2,fill=rev(unique(slt$group_col)))+
+  scale_y_continuous(expand=c(0,0))+
+  xlab("")+
+  ylab("CBD")+
+  theme_bw()+
+  theme(axis.text.y=element_text(color=rev(slt$group_col)))+
+  coord_flip()
+
+ggsave("plots.pdf",height=6,width=6)

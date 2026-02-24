@@ -1,0 +1,172 @@
+#Starting R studio
+
+#PCoA
+library(vegan)
+library(ggplot2)
+library(ggalt)
+otu_table<-csv
+asvgroup
+dune_dist<-vegdist(t(csv),method="bray",binary=F) 
+dune_dist
+dune_pcoa<-cmdscale(dune_dist,eig = T)
+dune_pcoa_points<-as.data.frame(dune_pcoa$points)
+sum_eig<-sum(dune_pcoa$eig)
+eig_percent<-round(dune_pcoa$eig/sum_eig*100,1)
+colnames(dune_pcoa_points)<-paste0("PCoA",1:2)
+dune_pcoa_result<-cbind(dune_pcoa_points,asvgroup)
+dune_pcoa_result$Group<-factor(dune_pcoa_result$Group,levels=unique(dune_pcoa_result$Group))
+ggplot(dune_pcoa_result, aes(x=PCoA1, y=PCoA2, color=Group,shape=Group))+labs(x=paste("PCoA 1 (", eig_percent[1], "%)", sep=""), y=paste("PCoA 2 (", eig_percent[2], "%)", sep="")) +geom_point(size=4)+theme_classic()+ scale_shape_manual(values = c(15, 19, 18,17))+scale_colour_manual(values=c("#33CC33","#33CCFF","#FFCC33","#FF0033"))+geom_hline(yintercept = 0, color = 'gray', size = 0.4,linetype="dashed")+geom_vline(xintercept = 0, color = 'gray', size = 0.4,linetype="dashed")+geom_encircle(aes(fill=Group), alpha = 0.1, show.legend = F)+theme_bw()+theme(panel.grid = element_blank())
+
+
+#NMDS
+library(vegan)
+library(ggplot2)
+library(ggrepel)
+otu.distance<-vegdist(sim,method='bray')
+df_nmds<-metaMDS(otu.distance,k=2)
+df_nmds_stress<-df_nmds$stress
+df_nmds_stress
+stressplot(df_nmds)
+df_points<-as.data.frame(df_nmds$points)
+df_points$samples<-row.names(df_points)
+names(df_points)[1:2]<-c('NMDS1','NMDS2')
+head(df_points)
+df_points[,4]<-c("AZO","CBD","CK")
+df_points[1:9,5]<-c("Fruit")
+df_points[10:18,5]<-c("Leaf")
+df_points[19:27,5]<-c("Root")
+df_points[28:36,5]<-c("Soil")
+df_points[37:45,5]<-c("Stem")
+df_points$group<-factor(df_points$group,levels=unique(df_points$group))
+ggplot(df_points, aes(x=NMDS1, y=NMDS2, color=group,shape=group))+geom_point(size=3)+theme_classic()+scale_shape_manual(values = c(15, 19, 18))+scale_colour_manual(values=colorsjj)+geom_hline(yintercept = 0, color = 'gray', size = 0.4,linetype="dashed")+geom_vline(xintercept = 0, color = 'gray', size = 0.4,linetype="dashed")+theme_bw()+theme(panel.grid = element_blank())+
+  stat_ellipse(
+    type = "t",         
+    level = 0.95,        
+    linetype = 2,       
+    size = 0.8
+  )
+
+
+
+
+#k-mean cluster
+
+library(pheatmap)
+library(ggplot2)
+library(cluster)
+library(clusterProfiler)
+fpkm_diff<-read.csv("diff.csv",row.names=1)
+scaled_data <- t(scale(t(fpkm_diff)))
+wss <- sapply(1:8, function(k) {
+  kmeans(scaled_data, centers=k, nstart=20)$tot.withinss
+})
+plot(1:8, wss, type="b", pch=19, 
+     xlab="Number of Clusters (k)", ylab="Total Within-Cluster SS",
+     main="Elbow Method for Optimal k")
+set.seed(123) 
+k <- 8    
+kmeans_result <- kmeans(scaled_data, centers=k, nstart=20)
+clusters <- kmeans_result$cluster  
+sample_groups <- data.frame(
+  Group = rep(c("CK", "AZO", "CBD"), each=3),  
+  row.names = colnames(fpkm_diff)             
+)
+pheatmap(
+  scaled_data,
+  annotation_row = data.frame(Cluster = factor(clusters)),  
+  annotation_col = sample_groups,                          
+  show_rownames = FALSE,                                  
+  clustering_method = "ward.D2",                          
+  main = "Clustered Gene Expression (Z-score)"
+)
+plot_data <- data.frame(
+  Gene = rownames(scaled_data),
+  Cluster = factor(clusters),
+  scaled_data
+)
+library(tidyr)
+plot_data_long <- pivot_longer(
+  plot_data,
+  cols = -c(Gene, Cluster),
+  names_to = "Sample",
+  values_to = "Expression"
+)
+plot_data_long$Group <- str_replace(plot_data_long$Sample, "[0-9]+$", "")
+library(dplyr)
+summary_data <- plot_data_long %>%
+  group_by(Cluster, Group) %>%
+  summarise(
+    Mean = mean(Expression),
+    SE = sd(Expression) / sqrt(n())
+  )
+
+ggplot(summary_data, aes(x=Group, y=Mean, group=Cluster, color=Cluster)) +
+  geom_line(linewidth=1) +
+  geom_point(size=3) +
+  geom_errorbar(aes(ymin=Mean-SE, ymax=Mean+SE), width=0.2) +
+  labs(
+    title = "Expression Trends by Cluster and Group",
+    x = "Treatment Group",
+    y = "Mean Z-score Expression"
+  ) +
+  theme_classic() +
+  scale_x_discrete(limits=c("CK", "AZO", "CBD"))  
+
+library(ggplot2)
+library(reshape2)  
+library(stringr)   
+
+head(scaled_data) 
+gene_data <- data.frame(
+  Gene = rownames(scaled_data),
+  Cluster = factor(clusters), 
+  scaled_data,
+  check.names = FALSE
+)
+gene_long <- melt(gene_data,
+                  id.vars = c("Gene", "Cluster"),
+                  variable.name = "Sample",
+                  value.name = "Expression")
+gene_long$Group <- str_extract(gene_long$Sample, "^[A-Za-z]+")
+gene_long$Group <- factor(gene_long$Group,levels=unique(gene_long$Group))
+cluster_sizes <- table(clusters)
+gene_long$Cluster <- paste0("Cluster ", gene_long$Cluster,
+                            " (n=", cluster_sizes[gene_long$Cluster], ")")
+gene_long$Cluster <- factor(gene_long$Cluster, 
+                            levels = paste0("Cluster ", 1:8, " (n=", cluster_sizes, ")"))
+cluster_colors <- c(
+  "#C0C0C0",  # cluster1
+  "#DAC6C2",  # cluster2
+  "#C0C0C0",  # cluster3
+  "#F2DBB3",  # cluster4
+  "#7886B8",  # cluster5
+  "#DAC6C2",  # cluster6
+  "#7886B8",  # cluster7
+  "#F2DBB3"   # cluster8
+)
+
+ggplot(gene_long, aes(x = Group, y = Expression, group = Gene, color = Cluster)) +
+  geom_line(alpha = 0.8, linewidth = 0.3,) +
+  stat_summary(
+    aes(group = 1),  
+    fun = mean,
+    geom = "line",
+    linewidth = 1.2,
+    color = "black"
+  ) +
+  facet_wrap(~ Cluster, ncol = 4, scales = "free_y") +
+  scale_color_manual(values = cluster_colors)+
+  theme_minimal() +
+  labs(x = "Treatment Group", y = "Z-score Expression") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 10, face = "bold"),
+    axis.title = element_text(size = 12, face = "bold"),
+    strip.text = element_text(size = 10, face = "bold", color = "white"),
+    strip.background = element_rect(fill = "#2c3e50", colour = NA),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.spacing = unit(1, "lines")
+  )+theme(
+    legend.position = "none"
+  )
+

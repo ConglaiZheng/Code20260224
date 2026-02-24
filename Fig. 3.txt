@@ -1,0 +1,42 @@
+#Starting R studio
+
+library(vegan)
+sim<-read.csv("sim.csv",row.names=1)
+simgroup<-read.csv("simgroup.csv",row.names=1)
+sim<-t(sim)
+simtest<-simper(sim,simgroup$group,permutations=999)
+summary(simtest)
+AZO_CK <- simtest$AZO_CK
+AZO_CK
+AZO_CK_dataframe <- data.frame(
+  species = AZO_CK$species, 
+  average = AZO_CK$average,
+  sd = AZO_CK$sd,
+  ratio = AZO_CK$ratio,
+  ava = AZO_CK$ava,
+  avb = AZO_CK$avb,
+  p = AZO_CK$p
+)
+AZO_CK_dataframe <- AZO_CK_dataframe[order(AZO_CK_dataframe$average, decreasing = TRUE), ]
+AZO_CK_dataframe <- cbind(AZO_CK_dataframe, cusum = AZO_CK$cusum)
+head(AZO_CK_dataframe)
+write.csv(AZO_CK_dataframe, 'AZO_CK.csv', row.names = FALSE)
+CBD_CK <- simtest$CBD_CK
+CBD_CK
+CBD_CK_dataframe <- data.frame(
+  species = CBD_CK$species, 
+  average = CBD_CK$average,
+  sd = CBD_CK$sd,
+  ratio = CBD_CK$ratio,
+  ava = CBD_CK$ava,
+  avb = CBD_CK$avb,
+  p = CBD_CK$p
+)
+CBD_CK_dataframe <- CBD_CK_dataframe[order(CBD_CK_dataframe$average, decreasing = TRUE), ]
+CBD_CK_dataframe <- cbind(CBD_CK_dataframe, cusum = CBD_CK$cusum)
+head(CBD_CK_dataframe)
+write.csv(CBD_CK_dataframe, 'CBD_CK.csv', row.names = FALSE)
+sandian<-read.csv("sandian.csv",row.names=1)
+library(ggplot2)
+ggplot(data = sandian, aes(x = AZO, y = CBD)) + geom_point(color="grey", size = 3,alpha=.8)+theme_bw()+scale_y_continuous(limits = c(0, 0.04))+scale_x_continuous(limits = c(0, 0.04))+theme(panel.grid = element_blank())
+

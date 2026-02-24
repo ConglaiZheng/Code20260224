@@ -1,0 +1,20 @@
+#Starting R studio
+
+library(ggradar)
+radar<-read.csv("radar.csv")
+radar$group<-factor(radar$group,levels=unique(radar$group))
+ggradar(radar,
+        grid.min = 0, 
+        grid.mid = 1, 
+        grid.max = 2, 
+        #values.radar = NA, 
+        gridline.mid.colour = 'grey', 
+        axis.label.size = 5.5, 
+        group.colours = colorszhp[1:3],
+        group.point.size = 4,
+        group.line.width = 1, 
+        background.circle.colour = '#D7D6D1', 
+        background.circle.transparency = 0.2, 
+        legend.position = 'bottom', 
+        legend.text.size = 14 
+)
